@@ -32,6 +32,16 @@ def get_parameter_norm(parameters, norm_type = 2):
 
     return total_norm
 
+def execute_shell_command(cmds, std_input):
+    import subprocess
+
+    current_input = std_input.encode('utf-8')
+    for cmd in cmds:
+        cmd = cmd.split(' ')
+        current_input = subprocess.run(cmd, stdout = subprocess.PIPE, input = current_input).stdout
+    
+    return current_input.decode('utf-8')
+
 def _update_ngrams_count(sent, ngrams, count):
     length = len(sent)
     for n in range(1, ngrams + 1):

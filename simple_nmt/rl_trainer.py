@@ -2,7 +2,6 @@ import time
 import numpy as np
 #from nltk.translate.bleu_score import sentence_bleu as score_func
 from nltk.translate.gleu_score import sentence_gleu as score_func
-#from utils import score_sentence as score_func
 
 import torch
 import torch.nn as nn
@@ -12,31 +11,55 @@ import torch.nn.utils as torch_utils
 import utils
 import data_loader
 
-def get_reward(y, y_hat):
+CMD_DICT = {'ko': ['python ./nlp_preprocessing/detokenizer.py', 'mecab -O wakati'],
+            'en': ['python ./nlp_preprocessing/detokenizer.py', 'python ./nlp_preprocessing/tokenizer.py']
+            }
+
+def get_reward(y, y_hat, target_lang = None, vocab = None):
     # |y| = (batch_size, length1)
     # |y_hat| = (batch_size, length2)
+    if vocab is not None and target_lang is not None:
+        is_executable = True
+    else:
+        is_executable = False
+    is_executable = False
 
     scores = []
 
+    refs, hyps = [], []
     for b in range(y.size(0)):
-        ref = []
-        hyp = []
+        ref, hyp = [], []
+        
         for t in range(y.size(1)):
-            ref += [str(int(y[b, t]))]
+            if is_executable:
+                ref += [vocab.itos[int(y[b, t])]]
+            else:
+                ref += [str(int(y[b, t]))]
             if y[b, t] == data_loader.EOS:
                 break
 
         for t in range(y_hat.size(1)):
-            hyp += [str(int(y_hat[b, t]))]
+            if is_executable:
+                hyp += [vocab.itos[int(y_hat[b, t])]]
+            else:
+                hyp += [str(int(y_hat[b, t]))]
             if y_hat[b, t] == data_loader.EOS:
                 break
 
         # for nltk.bleu & nltk.gleu
-        scores += [score_func([ref], hyp) * 100.]
+        if is_executable:
+            refs += [' '.join(ref[:-1])]
+            hyps += [' '.join(hyp[:-1])]
+        else:        
+            scores += [score_func([ref], hyp) * 100.]
 
-        # for utils.score_sentence
-        #scores += [score_func(ref, hyp, 4, smooth = 1)[-1] * 100.]
-    scores = torch.FloatTensor(scores).to(y.device)
+    if is_executable:
+        refs = utils.execute_shell_command(CMD_DICT[target_lang], '\n'.join(refs)).split('\n')
+        hyps = utils.execute_shell_command(CMD_DICT[target_lang], '\n'.join(hyps)).split('\n')
+
+        for ref, hyp in zip(refs, hyps):
+            scores += [score_func([ref], hyp) * 100.]
+    scores = torch.FloatTensor(scores[:-1]).to(y.device)
     # |scores| = (batch_size)
 
     return scores
@@ -78,7 +101,7 @@ def train_epoch(model, criterion, train_iter, valid_iter, config, start_epoch = 
         # |y_hat| = (batch_size, length, output_size)
         # |indice| = (batch_size, length)
 
-        reward = get_reward(y, indice)
+        reward = get_reward(y, indice, target_lang = config.lang[-2:], vocab = others_to_save['tgt_vocab'])
 
         total_reward += float(reward.sum())
         sample_cnt += batch_size
@@ -112,7 +135,7 @@ def train_epoch(model, criterion, train_iter, valid_iter, config, start_epoch = 
 
             # feed-forward
             y_hat, indice = model.search(x, is_greedy = False, max_length = config.max_length)
-            q_actor = get_reward(y, indice)
+            q_actor = get_reward(y, indice, target_lang = config.lang[-2:], vocab = others_to_save['tgt_vocab'])
             # |y_hat| = (batch_size, length, output_size)
             # |indice| = (batch_size, length)
             # |q_actor| = (batch_size)
@@ -121,7 +144,7 @@ def train_epoch(model, criterion, train_iter, valid_iter, config, start_epoch = 
             with torch.no_grad():
                 for i in range(config.n_samples):
                     _, sampled_indice = model.search(x, is_greedy = False, max_length = config.max_length)
-                    baseline += [get_reward(y, sampled_indice)]
+                    baseline += [get_reward(y, sampled_indice, target_lang = config.lang[-2:], vocab = others_to_save['tgt_vocab'])]
                 baseline = torch.stack(baseline).sum(dim = 0).div(config.n_samples)
                 # |baseline| = (n_samples, batch_size) --> (batch_size)
 
@@ -190,7 +213,7 @@ def train_epoch(model, criterion, train_iter, valid_iter, config, start_epoch = 
                 # |y_hat| = (batch_size, length, output_size)
                 # |indice| = (batch_size, length)
 
-                reward = get_reward(y, indice)
+                reward = get_reward(y, indice, target_lang = config.lang[-2:], vocab = others_to_save['tgt_vocab'])
 
                 total_reward += float(reward.sum())
                 sample_cnt += batch_size
