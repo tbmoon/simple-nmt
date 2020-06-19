@@ -32,7 +32,7 @@ class SingleBeamSearchSpace():
         # Cumulative log-probability for each beam.
         self.cumulative_probs = [torch.FloatTensor([.0] + [-float('inf')] * (beam_size - 1)).to(self.device)]
         # 1 if it is done else 0
-        self.masks = [torch.ByteTensor(beam_size).zero_().to(self.device)]
+        self.masks = [torch.BoolTensor(beam_size).zero_().to(self.device)]
 
         # We don't need to remember every time-step of hidden states:
         #       prev_hidden, prev_cell, prev_h_t_tilde

@@ -67,7 +67,7 @@ class LanguageModel(nn.Module):
 
             # y = torch.topk(y_hat, 1, dim = -1)[1].squeeze(-1)
             y = torch.multinomial(y_hat.exp().view(batch_size, -1), 1)
-            y = y.masked_fill_((1. - is_undone).byte(), data_loader.PAD)
+            y = y.masked_fill_((1. - is_undone).bool(), data_loader.PAD)
             is_undone = is_undone * torch.ne(y, data_loader.EOS).float()            
             # |y| = (batch_size, 1)
             # |is_undone| = (batch_size, 1)
